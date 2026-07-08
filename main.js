@@ -50,6 +50,7 @@
     const steeringNorm = ControllerModule.getSteeringNormalized();
     const speedAction = ControllerModule.getSpeedAction();
     const armDist = ControllerModule.getArmDistance();
+    const handsOpen = ControllerModule.getHandsOpen();
 
     GameModule.updateCarPhysics(1 / 60, speedAction, steeringNorm);
 
@@ -58,6 +59,7 @@
     const gameState = GameModule.getState();
     gameState.armDistance = armDist;
     gameState.action = ControllerModule.getCombinedState();
+    gameState.handsOpen = handsOpen;
 
     if (landmarks) {
       UIModule.drawSkeleton(landmarks);
