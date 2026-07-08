@@ -1,7 +1,6 @@
 const UIModule = (function() {
 
   let overlayCanvas, overlayCtx;
-  let fpsHistory = [];
   let lastFpsTime = 0;
   let fps = 0;
   let frameCount = 0;
@@ -19,6 +18,10 @@ const UIModule = (function() {
     resizeOverlay();
   }
 
+  function scale(point, w, h) {
+    return { x: point.x * w, y: point.y * h };
+  }
+
   function drawSkeleton(landmarks) {
     if (!overlayCtx) return;
     const w = overlayCanvas.width;
@@ -28,17 +31,14 @@ const UIModule = (function() {
 
     if (!landmarks) return;
 
-    const scale = (point) => ({
-      x: point.x * w,
-      y: point.y * h
-    });
+    const sc = (p) => scale(p, w, h);
 
-    const ls = scale(landmarks.leftShoulder);
-    const rs = scale(landmarks.rightShoulder);
-    const le = scale(landmarks.leftElbow);
-    const re = scale(landmarks.rightElbow);
-    const lw = scale(landmarks.leftWrist);
-    const rw = scale(landmarks.rightWrist);
+    const ls = sc(landmarks.leftShoulder);
+    const rs = sc(landmarks.rightShoulder);
+    const le = sc(landmarks.leftElbow);
+    const re = sc(landmarks.rightElbow);
+    const lw = sc(landmarks.leftWrist);
+    const rw = sc(landmarks.rightWrist);
 
     // Torso
     overlayCtx.beginPath();
@@ -77,8 +77,8 @@ const UIModule = (function() {
     overlayCtx.stroke();
     overlayCtx.shadowBlur = 0;
 
-    // Joint circles
-    const joints = [
+    // Main joints (circles)
+    const mainJoints = [
       { pos: ls, color: '#00ff88' },
       { pos: rs, color: '#00ff88' },
       { pos: le, color: '#00ff88' },
@@ -87,7 +87,7 @@ const UIModule = (function() {
       { pos: rw, color: '#ff4400' }
     ];
 
-    for (const j of joints) {
+    for (const j of mainJoints) {
       overlayCtx.beginPath();
       overlayCtx.arc(j.pos.x, j.pos.y, 5, 0, Math.PI * 2);
       overlayCtx.fillStyle = j.color;
@@ -96,6 +96,56 @@ const UIModule = (function() {
       overlayCtx.lineWidth = 1.5;
       overlayCtx.stroke();
     }
+
+    // --- Hand skeleton (finger bones) ---
+    drawHandSkeleton(landmarks, w, h);
+  }
+
+  function drawHandSkeleton(lm, w, h) {
+    const hands = [
+      { wrist: lm.leftWrist, thumb: lm.leftThumb, index: lm.leftIndex, pinky: lm.leftPinky },
+      { wrist: lm.rightWrist, thumb: lm.rightThumb, index: lm.rightIndex, pinky: lm.rightPinky }
+    ];
+
+    for (const hand of hands) {
+      if (!hand.wrist || !hand.thumb || !hand.index || !hand.pinky) continue;
+
+      const wrist = scale(hand.wrist, w, h);
+      const thumb = scale(hand.thumb, w, h);
+      const index = scale(hand.index, w, h);
+      const pinky = scale(hand.pinky, w, h);
+
+      // Draw finger bones
+      const fingers = [
+        { from: wrist, to: thumb, color: '#ffcc00' },
+        { from: wrist, to: index, color: '#ffcc00' },
+        { from: wrist, to: pinky, color: '#ffcc00' },
+        { from: thumb, to: index, color: '#ff8800' }
+      ];
+
+      for (const f of fingers) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(f.from.x, f.from.y);
+        overlayCtx.lineTo(f.to.x, f.to.y);
+        overlayCtx.strokeStyle = f.color;
+        overlayCtx.lineWidth = 2.5;
+        overlayCtx.stroke();
+      }
+
+      // Joint circles at finger tips
+      const tips = [
+        { pos: thumb, color: '#ffcc00' },
+        { pos: index, color: '#ffcc00' },
+        { pos: pinky, color: '#ffcc00' }
+      ];
+
+      for (const t of tips) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(t.pos.x, t.pos.y, 3.5, 0, Math.PI * 2);
+        overlayCtx.fillStyle = t.color;
+        overlayCtx.fill();
+      }
+    }
   }
 
   function updateHUD(state) {
@@ -103,7 +153,6 @@ const UIModule = (function() {
     const steeringEl = document.getElementById('hud-steering');
     const armDistEl = document.getElementById('hud-armdist');
     const actionEl = document.getElementById('hud-action');
-    const handsEl = document.getElementById('hud-hands');
     const fpsEl = document.getElementById('hud-fps');
 
     if (!state) return;
@@ -115,12 +164,8 @@ const UIModule = (function() {
     const steerSign = steerDeg > 0 ? '+' : '';
     if (steeringEl) steeringEl.textContent = steerSign + steerDeg + '°';
 
-    if (armDistEl) armDistEl.textContent = state.armDistance.toFixed(2);
+    if (armDistEl) armDistEl.textContent = state.armDistance.toFixed(3);
     if (actionEl) actionEl.textContent = state.action || 'STOP';
-    if (handsEl) {
-      handsEl.textContent = state.handsOpen ? 'OPEN' : 'FIST';
-      handsEl.style.color = state.handsOpen ? '#ff0' : '#0f0';
-    }
     if (fpsEl) fpsEl.textContent = fps;
   }
 
