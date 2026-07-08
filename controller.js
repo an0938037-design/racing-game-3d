@@ -8,8 +8,12 @@ const ControllerModule = (function() {
 
   const DEAD_ZONE_DEG = 10;
   const MAX_STEER_DEG = 45;
-  const FORWARD_THRESHOLD = 0.65;
-  const REVERSE_THRESHOLD = 0.45;
+
+  // Keyboard state
+  const keys = {};
+
+  document.addEventListener('keydown', e => { keys[e.key] = true; });
+  document.addEventListener('keyup', e => { keys[e.key] = false; });
 
   function dist3D(a, b) {
     const dx = a.x - b.x;
@@ -18,13 +22,33 @@ const ControllerModule = (function() {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
+  function updateFromKeyboard() {
+    let steer = 0;
+    if (keys['ArrowLeft'] || keys['a']) steer = -1;
+    if (keys['ArrowRight'] || keys['d']) steer = 1;
+
+    steeringNormalized = steer;
+    steeringAngleDeg = steer * MAX_STEER_DEG;
+
+    if (keys['ArrowUp'] || keys['w']) {
+      speedAction = 'FORWARD';
+    } else if (keys['ArrowDown'] || keys['s']) {
+      speedAction = 'REVERSE';
+    } else {
+      speedAction = 'STOP';
+    }
+
+    let dir = '';
+    if (steeringNormalized < -0.05) dir = 'LEFT';
+    else if (steeringNormalized > 0.05) dir = 'RIGHT';
+    combinedState = dir ? speedAction + '+' + dir : speedAction;
+
+    armDistance = speedAction === 'FORWARD' ? 0.5 : (speedAction === 'REVERSE' ? 0.1 : 0.3);
+  }
+
   function update(landmarks) {
     if (!landmarks) {
-      steeringAngleDeg = 0;
-      steeringNormalized = 0;
-      speedAction = 'STOP';
-      armDistance = 0;
-      combinedState = 'STOP';
+      updateFromKeyboard();
       return;
     }
 
@@ -34,11 +58,7 @@ const ControllerModule = (function() {
     const rs = landmarks.rightShoulder;
 
     if (!lw || !rw || !ls || !rs) {
-      steeringAngleDeg = 0;
-      steeringNormalized = 0;
-      speedAction = 'STOP';
-      armDistance = 0;
-      combinedState = 'STOP';
+      updateFromKeyboard();
       return;
     }
 
@@ -55,27 +75,25 @@ const ControllerModule = (function() {
 
     steeringNormalized = steeringAngleDeg / MAX_STEER_DEG;
 
-    // --- Arm Distance ---
+    // --- Speed via arm distance ---
     const dLeft = dist3D(ls, lw);
     const dRight = dist3D(rs, rw);
     armDistance = (dLeft + dRight) / 2;
 
-    // --- State Machine ---
-    if (armDistance > FORWARD_THRESHOLD) {
+    const shoulderWidth = dist3D(ls, rs);
+    const normalizedD = shoulderWidth > 0.01 ? armDistance / shoulderWidth : armDistance;
+
+    if (normalizedD > 1.6) {
       speedAction = 'FORWARD';
-    } else if (armDistance < REVERSE_THRESHOLD) {
+    } else if (normalizedD < 1.0) {
       speedAction = 'REVERSE';
     } else {
       speedAction = 'STOP';
     }
 
-    // --- Combined State ---
     let dir = '';
-    if (steeringNormalized < -0.05) {
-      dir = 'LEFT';
-    } else if (steeringNormalized > 0.05) {
-      dir = 'RIGHT';
-    }
+    if (steeringNormalized < -0.05) dir = 'LEFT';
+    else if (steeringNormalized > 0.05) dir = 'RIGHT';
     combinedState = dir ? speedAction + '+' + dir : speedAction;
   }
 
