@@ -1,31 +1,39 @@
 (function() {
 
   let isRunning = false;
-  let trackingLost = false;
+  let poseAvailable = false;
 
   async function init() {
-    const video = document.getElementById('webcam');
-    if (!video) {
-      console.error('Webcam video element not found');
-      return;
-    }
-
     UIModule.init();
-
-    await PoseModule.initialize(video, {
-      onTrackingLost: () => {
-        trackingLost = true;
-        UIModule.showError(true);
-      },
-      onFrame: (landmarks, results) => {
-        trackingLost = false;
-        UIModule.showError(false);
-      }
-    });
 
     const container = document.getElementById('game-container');
     GameModule.init(container);
 
+    // Try to initialize webcam + pose
+    try {
+      const video = document.getElementById('webcam');
+      if (video) {
+        await PoseModule.initialize(video, {
+          onTrackingLost: () => {
+            UIModule.showError(true);
+            document.getElementById('error-banner').textContent = 'PLAYER NOT DETECTED - USE KEYBOARD (WASD/Arrow keys)';
+          },
+          onFrame: () => {
+            UIModule.showError(false);
+          }
+        });
+        poseAvailable = true;
+        console.log('Pose tracking enabled');
+      }
+    } catch (err) {
+      console.warn('Pose/webcam init failed, using keyboard only:', err.message);
+      document.getElementById('init-banner').style.display = 'none';
+      UIModule.showError(true);
+      document.getElementById('error-banner').textContent = 'NO CAMERA - USE KEYBOARD (WASD / Arrow keys)';
+      document.getElementById('error-banner').style.background = 'rgba(255, 165, 0, 0.85)';
+    }
+
+    document.getElementById('init-banner').style.display = 'none';
     isRunning = true;
     gameLoop(performance.now());
   }
@@ -35,7 +43,7 @@
 
     UIModule.updateFPS(timestamp);
 
-    const landmarks = PoseModule.getLandmarks();
+    const landmarks = poseAvailable ? PoseModule.getLandmarks() : null;
 
     ControllerModule.update(landmarks);
 
@@ -43,19 +51,17 @@
     const speedAction = ControllerModule.getSpeedAction();
     const armDist = ControllerModule.getArmDistance();
 
-    if (trackingLost || !PoseModule.isPlayerDetected()) {
-      GameModule.updateCarPhysics(1 / 60, 'STOP', 0);
-    } else {
-      GameModule.updateCarPhysics(1 / 60, speedAction, steeringNorm);
-    }
+    GameModule.updateCarPhysics(1 / 60, speedAction, steeringNorm);
 
-    const delta = GameModule.render();
+    GameModule.render();
 
     const gameState = GameModule.getState();
     gameState.armDistance = armDist;
     gameState.action = ControllerModule.getCombinedState();
 
-    UIModule.drawSkeleton(landmarks);
+    if (landmarks) {
+      UIModule.drawSkeleton(landmarks);
+    }
     UIModule.updateHUD(gameState);
 
     requestAnimationFrame(gameLoop);
@@ -63,9 +69,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     init().catch(err => {
-      console.error('Initialization error:', err);
-      UIModule.showError(true);
-      document.getElementById('error-banner').textContent = 'INIT ERROR: ' + err.message;
+      console.error('Fatal error:', err);
     });
   });
 })();
