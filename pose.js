@@ -4,9 +4,12 @@ const PoseModule = (function() {
   const LANDMARK_KEYS = [
     'leftShoulder', 'rightShoulder',
     'leftElbow', 'rightElbow',
-    'leftWrist', 'rightWrist'
+    'leftWrist', 'rightWrist',
+    'leftThumb', 'rightThumb',
+    'leftIndex', 'rightIndex',
+    'leftPinky', 'rightPinky'
   ];
-  const LANDMARK_IDS = [11, 12, 13, 14, 15, 16];
+  const LANDMARK_IDS = [11, 12, 13, 14, 15, 16, 21, 22, 19, 20, 17, 18];
 
   let pose = null;
   let camera = null;
@@ -24,7 +27,7 @@ const PoseModule = (function() {
   let onFrameCallback = null;
 
   function smoothLandmark(key, newPoint) {
-    history[key].push({ x: newPoint.x, y: newPoint.y, z: newPoint.z });
+    history[key].push({ x: newPoint.x, y: newPoint.y, z: newPoint.z, visibility: newPoint.visibility });
     if (history[key].length > SMOOTHING_WINDOW) {
       history[key].shift();
     }
@@ -108,13 +111,6 @@ const PoseModule = (function() {
     return currentLandmarks;
   }
 
-  function getRawLandmarkById(id) {
-    if (!currentLandmarks) return null;
-    const idx = LANDMARK_IDS.indexOf(id);
-    if (idx === -1) return null;
-    return currentLandmarks[LANDMARK_KEYS[idx]];
-  }
-
   function isPlayerDetected() {
     return isTracking && currentLandmarks !== null;
   }
@@ -131,7 +127,6 @@ const PoseModule = (function() {
   return {
     initialize,
     getLandmarks,
-    getRawLandmarkById,
     isPlayerDetected,
     stop
   };
