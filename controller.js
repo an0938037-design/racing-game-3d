@@ -5,11 +5,11 @@ const ControllerModule = (function() {
   let speedAction = 'STOP';
   let armDistance = 0;
   let combinedState = 'STOP';
-  let handsOpen = false;
 
   const DEAD_ZONE_DEG = 10;
   const MAX_STEER_DEG = 45;
-  const HAND_OPEN_THRESHOLD = 0.04;
+  const REVERSE_THRESHOLD = 0.6;
+  const FORWARD_THRESHOLD = 1.3;
 
   const keys = {};
 
@@ -57,8 +57,6 @@ const ControllerModule = (function() {
     const rw = landmarks.rightWrist;
     const ls = landmarks.leftShoulder;
     const rs = landmarks.rightShoulder;
-    const li = landmarks.leftIndex;
-    const ri = landmarks.rightIndex;
 
     if (!lw || !rw || !ls || !rs) {
       updateFromKeyboard();
@@ -78,35 +76,22 @@ const ControllerModule = (function() {
 
     steeringNormalized = steeringAngleDeg / MAX_STEER_DEG;
 
-    // --- Hand-open detection ---
-    let leftOpen = false, rightOpen = false;
-    if (li) {
-      leftOpen = dist3D(lw, li) > HAND_OPEN_THRESHOLD;
-    }
-    if (ri) {
-      rightOpen = dist3D(rw, ri) > HAND_OPEN_THRESHOLD;
-    }
-    handsOpen = leftOpen && rightOpen;
+    // --- Speed via wrist-to-shoulder proximity ---
+    // Hands near shoulders = REVERSE, hands far from body = FORWARD
+    const dLeft = dist3D(ls, lw);
+    const dRight = dist3D(rs, rw);
+    const avgDist = (dLeft + dRight) / 2;
+    const shoulderWidth = dist3D(ls, rs);
+    const normalizedD = shoulderWidth > 0.01 ? avgDist / shoulderWidth : avgDist;
 
-    if (handsOpen) {
-      speedAction = 'STOP';
-      armDistance = (dist3D(ls, lw) + dist3D(rs, rw)) / 2;
+    armDistance = avgDist;
+
+    if (normalizedD < REVERSE_THRESHOLD) {
+      speedAction = 'REVERSE';
+    } else if (normalizedD > FORWARD_THRESHOLD) {
+      speedAction = 'FORWARD';
     } else {
-      // --- Speed via arm distance (INVERTED: dang rong = REVERSE, thu vao = FORWARD) ---
-      const dLeft = dist3D(ls, lw);
-      const dRight = dist3D(rs, rw);
-      armDistance = (dLeft + dRight) / 2;
-
-      const shoulderWidth = dist3D(ls, rs);
-      const normalizedD = shoulderWidth > 0.01 ? armDistance / shoulderWidth : armDistance;
-
-      if (normalizedD > 1.6) {
-        speedAction = 'REVERSE';
-      } else if (normalizedD < 1.0) {
-        speedAction = 'FORWARD';
-      } else {
-        speedAction = 'STOP';
-      }
+      speedAction = 'STOP';
     }
 
     // --- Combined State ---
@@ -136,17 +121,12 @@ const ControllerModule = (function() {
     return combinedState;
   }
 
-  function getHandsOpen() {
-    return handsOpen;
-  }
-
   return {
     update,
     getSteeringAngleDeg,
     getSteeringNormalized,
     getSpeedAction,
     getArmDistance,
-    getCombinedState,
-    getHandsOpen
+    getCombinedState
   };
 })();
