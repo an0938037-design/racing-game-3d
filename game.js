@@ -3,19 +3,13 @@ const GameModule = (function() {
   let scene, camera, renderer;
   let car, carBody;
   let clock;
-  let road;
+  let trackCenterLine = [];
   let walls = [];
-  let coins = [];
-  let obstacles = [];
   let trees = [];
-  let laneMarkers = [];
 
-  const ROAD_WIDTH = 12;
-  const ROAD_LENGTH = 160;
-  const HALF_WALL = 0.5;
+  const TRACK_HALF_WIDTH = 4;
   const WALL_HEIGHT = 1.5;
-  const COIN_RADIUS = 0.5;
-  const OBSTACLE_RADIUS = 0.8;
+  const FIGURE8_SCALE = 16;
 
   const MAX_SPEED = 1.2;
   const MAX_REVERSE_SPEED = 0.5;
@@ -27,14 +21,21 @@ const GameModule = (function() {
   let score = 0;
   let currentAction = 'STOP';
   let currentSteering = 0;
-  let coinSpinAngle = 0;
+
+  function lemniscate(t, a) {
+    const denom = 1 + Math.sin(t) * Math.sin(t);
+    return {
+      x: a * Math.cos(t) / denom,
+      z: a * Math.sin(t) * Math.cos(t) / denom
+    };
+  }
 
   function init(container) {
     clock = new THREE.Clock();
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
-    scene.fog = new THREE.FogExp2(0x1a1a2e, 0.006);
+    scene.fog = new THREE.FogExp2(0x1a1a2e, 0.004);
 
     const aspect = container.clientWidth / container.clientHeight;
     camera = new THREE.PerspectiveCamera(65, aspect, 0.1, 200);
@@ -60,17 +61,15 @@ const GameModule = (function() {
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
     sun.shadow.camera.near = 0.5;
-    sun.shadow.camera.far = 60;
-    sun.shadow.camera.left = -20;
-    sun.shadow.camera.right = 20;
-    sun.shadow.camera.top = 20;
-    sun.shadow.camera.bottom = -20;
+    sun.shadow.camera.far = 80;
+    sun.shadow.camera.left = -30;
+    sun.shadow.camera.right = 30;
+    sun.shadow.camera.top = 30;
+    sun.shadow.camera.bottom = -30;
     scene.add(sun);
 
     createWorld();
     createCar();
-    createCoins();
-    createObstacles();
     createTrees();
 
     window.addEventListener('resize', function() {
@@ -85,86 +84,126 @@ const GameModule = (function() {
   }
 
   function createWorld() {
-    const groundGeo = new THREE.PlaneGeometry(200, 200);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x2d5a27,
-      roughness: 0.9
-    });
+    const a = FIGURE8_SCALE;
+    const numSegments = 120;
+    const halfW = TRACK_HALF_WIDTH;
+
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(80, 80);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2d5a27, roughness: 0.9 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.05;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH);
-    const roadMat = new THREE.MeshStandardMaterial({
-      color: 0x444444,
-      roughness: 0.8
-    });
-    road = new THREE.Mesh(roadGeo, roadMat);
-    road.rotation.x = -Math.PI / 2;
-    road.position.set(0, 0, 0);
+    // Generate figure-8 center line
+    for (let i = 0; i <= numSegments; i++) {
+      const t = (i / numSegments) * 2 * Math.PI;
+      const p = lemniscate(t, a);
+      trackCenterLine.push(new THREE.Vector3(p.x, 0, p.z));
+    }
+
+    // Build road mesh
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    for (let i = 0; i < trackCenterLine.length; i++) {
+      const p = trackCenterLine[i];
+      const next = trackCenterLine[(i + 1) % trackCenterLine.length];
+      const tangent = new THREE.Vector3().copy(next).sub(p).normalize();
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+
+      const left = new THREE.Vector3().copy(p).add(normal.clone().multiplyScalar(halfW));
+      const right = new THREE.Vector3().copy(p).sub(normal.clone().multiplyScalar(halfW));
+
+      positions.push(left.x, -0.02, left.z);
+      positions.push(right.x, -0.02, right.z);
+      uvs.push(i / trackCenterLine.length, 0);
+      uvs.push(i / trackCenterLine.length, 1);
+    }
+
+    for (let i = 0; i < trackCenterLine.length - 1; i++) {
+      const a2 = i * 2, b = i * 2 + 1;
+      const c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+      indices.push(a2, c, b);
+      indices.push(b, c, d);
+    }
+
+    const roadGeo = new THREE.BufferGeometry();
+    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    roadGeo.setIndex(indices);
+    roadGeo.computeVertexNormals();
+
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+    const road = new THREE.Mesh(roadGeo, roadMat);
     road.receiveShadow = true;
     scene.add(road);
 
-    const laneMat = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      roughness: 0.6
-    });
-    for (let z = -ROAD_LENGTH / 2 + 2; z < ROAD_LENGTH / 2 - 2; z += 6) {
-      const marker = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.2, 3),
-        laneMat
-      );
-      marker.rotation.x = -Math.PI / 2;
-      marker.position.set(0, 0.01, z);
-      scene.add(marker);
-      laneMarkers.push(marker);
-    }
-
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0xff4444,
-      roughness: 0.5,
-      emissive: 0x661111,
-      emissiveIntensity: 0.3
-    });
-    const halfLen = ROAD_LENGTH / 2 + 2;
-    const halfWid = ROAD_WIDTH / 2;
-
-    function addWall(x, z, sx, sz) {
-      const geo = new THREE.BoxGeometry(sx, WALL_HEIGHT, sz);
-      const mesh = new THREE.Mesh(geo, wallMat);
-      mesh.position.set(x, WALL_HEIGHT / 2, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-      walls.push({
-        mesh: mesh,
-        minX: x - sx / 2,
-        maxX: x + sx / 2,
-        minZ: z - sz / 2,
-        maxZ: z + sz / 2
-      });
-    }
-
-    addWall(0, -halfLen, ROAD_WIDTH + 2, 0.5);
-    addWall(0, halfLen, ROAD_WIDTH + 2, 0.5);
-    addWall(-halfWid - 1, 0, 0.5, ROAD_LENGTH + 4);
-    addWall(halfWid + 1, 0, 0.5, ROAD_LENGTH + 4);
-
-    const stripeMat = new THREE.MeshStandardMaterial({
+    // Road edge markings (thin glowing lines)
+    const edgeMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.4,
-      emissive: 0xffffff,
-      emissiveIntensity: 0.1
+      emissive: 0x4488ff,
+      emissiveIntensity: 0.15
     });
-    for (let z = -halfLen + 2; z < halfLen - 2; z += 2) {
-      const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(0.15, 1.0, 0.8),
-        stripeMat
-      );
-      stripe.position.set(0, 1.0, z);
-      scene.add(stripe);
+
+    for (let i = 0; i < trackCenterLine.length - 1; i++) {
+      const p = trackCenterLine[i];
+      const next = trackCenterLine[(i + 1) % trackCenterLine.length];
+      const tangent = new THREE.Vector3().copy(next).sub(p).normalize();
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+
+      for (const side of [-1, 1]) {
+        const edgePos = new THREE.Vector3().copy(p).add(
+          normal.clone().multiplyScalar(halfW * side)
+        );
+        const stripe = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.05, 0.4),
+          edgeMat
+        );
+        stripe.position.copy(edgePos);
+        stripe.position.y = 0.02;
+        const angle = Math.atan2(tangent.x, tangent.z);
+        stripe.rotation.y = angle;
+        scene.add(stripe);
+        walls.push(stripe);
+      }
+    }
+
+    // Barriers (low walls) along edges
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0xff6600,
+      emissive: 0xff4400,
+      emissiveIntensity: 0.2
+    });
+    const wallSegments = [];
+    const step = 3;
+    for (let i = 0; i < trackCenterLine.length - 1; i += step) {
+      const p = trackCenterLine[i];
+      const next = trackCenterLine[Math.min(i + step, trackCenterLine.length - 1)];
+      const mid = new THREE.Vector3().copy(p).add(next).multiplyScalar(0.5);
+      const tangent = new THREE.Vector3().copy(next).sub(p).normalize();
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+      const segLen = new THREE.Vector3().copy(next).sub(p).length();
+
+      for (const side of [-1, 1]) {
+        const wallPos = new THREE.Vector3().copy(mid).add(
+          normal.clone().multiplyScalar(halfW * side)
+        );
+        const wall = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, WALL_HEIGHT, segLen + 0.1),
+          wallMat
+        );
+        wall.position.copy(wallPos);
+        wall.position.y = WALL_HEIGHT / 2;
+        const angle = Math.atan2(tangent.x, tangent.z);
+        wall.rotation.y = angle;
+        wall.castShadow = true;
+        scene.add(wall);
+        wallSegments.push(wall);
+      }
     }
   }
 
@@ -244,71 +283,25 @@ const GameModule = (function() {
       car.add(tl);
     }
 
-    car.position.set(0, 0, 20);
-    car.rotation.y = Math.PI;
+    // Start at right edge of figure-8, facing the track direction
+    const start = lemniscate(0, FIGURE8_SCALE);
+    car.position.set(start.x, 0, start.z);
+    car.rotation.y = 0;
     scene.add(car);
   }
 
-  function createCoins() {
-    const coinMat = new THREE.MeshStandardMaterial({
-      color: 0xffd700,
-      roughness: 0.2,
-      metalness: 0.8,
-      emissive: 0xffaa00,
-      emissiveIntensity: 0.2
-    });
-
-    for (let i = 0; i < 20; i++) {
-      const coin = new THREE.Mesh(
-        new THREE.TorusGeometry(COIN_RADIUS, 0.15, 12, 20),
-        coinMat
-      );
-      const x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);
-      const z = (Math.random() - 0.5) * (ROAD_LENGTH - 10);
-      coin.position.set(x, 1.2, z);
-      coin.rotation.x = Math.PI / 2;
-      coin.castShadow = true;
-      scene.add(coin);
-      coins.push({
-        mesh: coin,
-        collected: false,
-        respawnTimer: 0
-      });
-    }
-  }
-
-  function createObstacles() {
-    const obsMat = new THREE.MeshStandardMaterial({
-      color: 0xff3333,
-      roughness: 0.6,
-      emissive: 0x881111,
-      emissiveIntensity: 0.2
-    });
-
-    for (let i = 0; i < 8; i++) {
-      const obs = new THREE.Mesh(
-        new THREE.CylinderGeometry(OBSTACLE_RADIUS, OBSTACLE_RADIUS, 1.2, 12),
-        obsMat
-      );
-      const x = (Math.random() - 0.5) * (ROAD_WIDTH - 2.5);
-      const z = (Math.random() - 0.5) * (ROAD_LENGTH - 10);
-      obs.position.set(x, 0.6, z);
-      obs.castShadow = true;
-      scene.add(obs);
-      obstacles.push(obs);
-    }
-  }
-
   function createTrees() {
-    for (let i = 0; i < 30; i++) {
-      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 });
-      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 });
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 });
 
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const x = side * (ROAD_WIDTH / 2 + 1.5 + Math.random() * 4);
-      const z = (Math.random() - 0.5) * (ROAD_LENGTH - 5);
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 10 + Math.random() * 25;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
 
-      if (Math.abs(x) < ROAD_WIDTH / 2 + 1) continue;
+      const distFromCenter = Math.sqrt(x * x + z * z);
+      if (distFromCenter < FIGURE8_SCALE * 0.7) continue;
 
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.5, 6), trunkMat);
       trunk.position.set(x, 0.75, z);
@@ -316,7 +309,10 @@ const GameModule = (function() {
       scene.add(trunk);
       trees.push(trunk);
 
-      const foliage = new THREE.Mesh(new THREE.SphereGeometry(0.8 + Math.random() * 0.4, 6, 6), foliageMat);
+      const foliage = new THREE.Mesh(
+        new THREE.SphereGeometry(0.8 + Math.random() * 0.4, 6, 6),
+        foliageMat
+      );
       foliage.position.set(x, 1.8 + Math.random() * 0.3, z);
       foliage.castShadow = true;
       scene.add(foliage);
@@ -324,86 +320,39 @@ const GameModule = (function() {
     }
   }
 
-  function checkWallCollision(pos, radius) {
-    const halfWid = ROAD_WIDTH / 2;
-    const halfLen = ROAD_LENGTH / 2;
-    const margin = radius + 0.3;
-
-    let collided = false;
-
-    if (pos.x > halfWid - margin) {
-      pos.x = halfWid - margin;
-      collided = true;
-    }
-    if (pos.x < -halfWid + margin) {
-      pos.x = -halfWid + margin;
-      collided = true;
-    }
-    if (pos.z > halfLen - margin) {
-      pos.z = halfLen - margin;
-      collided = true;
-    }
-    if (pos.z < -halfLen + margin) {
-      pos.z = -halfLen + margin;
-      collided = true;
-    }
-
-    return collided;
-  }
-
-  function checkCoinCollision() {
-    const carPos = car.position;
-    const collectDist = 1.5;
-
-    for (const coin of coins) {
-      if (coin.collected) continue;
-      const dx = carPos.x - coin.mesh.position.x;
-      const dz = carPos.z - coin.mesh.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < collectDist) {
-        coin.collected = true;
-        coin.mesh.visible = false;
-        coin.respawnTimer = 120;
-        score += 10;
+  function nearestTrackPoint(pos) {
+    let minDist = Infinity;
+    let nearest = null;
+    let idx = 0;
+    for (let i = 0; i < trackCenterLine.length; i++) {
+      const p = trackCenterLine[i];
+      const dx = pos.x - p.x;
+      const dz = pos.z - p.z;
+      const dist = dx * dx + dz * dz;
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = p;
+        idx = i;
       }
     }
+    return { point: nearest, dist: Math.sqrt(minDist), index: idx };
   }
 
-  function checkObstacleCollision() {
-    const carPos = car.position;
-    const hitDist = 1.2;
+  function constrainToTrack(pos, radius) {
+    const result = nearestTrackPoint(pos);
+    if (!result.point) return false;
 
-    for (const obs of obstacles) {
-      const dx = carPos.x - obs.position.x;
-      const dz = carPos.z - obs.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < hitDist) {
-        const awayX = carPos.x - obs.position.x;
-        const awayZ = carPos.z - obs.position.z;
-        const len = Math.sqrt(awayX * awayX + awayZ * awayZ);
-        if (len > 0.001) {
-          car.position.x += (awayX / len) * 0.5;
-          car.position.z += (awayZ / len) * 0.5;
-        }
-        velocity *= -0.3;
-        return true;
-      }
+    const margin = TRACK_HALF_WIDTH - radius - 0.3;
+    if (result.dist > margin) {
+      const dir = new THREE.Vector3()
+        .copy(pos)
+        .sub(result.point)
+        .normalize();
+      pos.x = result.point.x + dir.x * margin;
+      pos.z = result.point.z + dir.z * margin;
+      return true;
     }
     return false;
-  }
-
-  function respawnCoins() {
-    for (const coin of coins) {
-      if (coin.collected) {
-        coin.respawnTimer--;
-        if (coin.respawnTimer <= 0) {
-          coin.mesh.position.x = (Math.random() - 0.5) * (ROAD_WIDTH - 2);
-          coin.mesh.position.z = (Math.random() - 0.5) * (ROAD_LENGTH - 10);
-          coin.collected = false;
-          coin.mesh.visible = true;
-        }
-      }
-    }
   }
 
   function updateCarPhysics(deltaTime, action, steerNorm) {
@@ -423,7 +372,7 @@ const GameModule = (function() {
     }
 
     if (Math.abs(velocity) > 0.01) {
-      const turnFactor = (velocity / MAX_SPEED) * STEERING_SPEED * deltaTime * 60;
+      const turnFactor = (Math.abs(velocity) / MAX_SPEED) * STEERING_SPEED * deltaTime * 60;
       car.rotation.y += steerNorm * turnFactor;
     }
 
@@ -432,25 +381,13 @@ const GameModule = (function() {
     car.position.x += forwardX * velocity * deltaTime * 60;
     car.position.z += forwardZ * velocity * deltaTime * 60;
 
-    checkWallCollision(car.position, 0.5);
+    constrainToTrack(car.position, 0.5);
 
     if (velocity !== 0) {
       let tilt = steerNorm * 0.08 * Math.min(Math.abs(velocity) / MAX_SPEED, 1);
       car.rotation.z = tilt;
     } else {
       car.rotation.z *= 0.9;
-    }
-
-    checkCoinCollision();
-    checkObstacleCollision();
-    respawnCoins();
-
-    coinSpinAngle += 0.03 * deltaTime * 60;
-    for (const coin of coins) {
-      if (!coin.collected) {
-        coin.mesh.rotation.z = coinSpinAngle;
-        coin.mesh.position.y = 1.2 + Math.sin(coinSpinAngle * 2) * 0.15;
-      }
     }
   }
 
@@ -478,8 +415,9 @@ const GameModule = (function() {
   }
 
   function reset() {
-    car.position.set(0, 0, 20);
-    car.rotation.set(0, Math.PI, 0);
+    const start = lemniscate(0, FIGURE8_SCALE);
+    car.position.set(start.x, 0, start.z);
+    car.rotation.set(0, 0, 0);
     velocity = 0;
     score = 0;
   }
