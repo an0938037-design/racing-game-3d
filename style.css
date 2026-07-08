@@ -126,6 +126,27 @@ html, body {
   display: none;
 }
 
+#init-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 16px 32px;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  z-index: 99;
+  text-align: center;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 @media (max-width: 768px) {
   #app {
     flex-direction: column;
