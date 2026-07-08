@@ -424,7 +424,7 @@ const GameModule = (function() {
 
     if (Math.abs(velocity) > 0.01) {
       const turnFactor = (velocity / MAX_SPEED) * STEERING_SPEED * deltaTime * 60;
-      car.rotation.y -= steerNorm * turnFactor;
+      car.rotation.y += steerNorm * turnFactor;
     }
 
     const forwardX = Math.sin(car.rotation.y);
@@ -435,7 +435,7 @@ const GameModule = (function() {
     checkWallCollision(car.position, 0.5);
 
     if (velocity !== 0) {
-      let tilt = -steerNorm * 0.08 * Math.min(Math.abs(velocity) / MAX_SPEED, 1);
+      let tilt = steerNorm * 0.08 * Math.min(Math.abs(velocity) / MAX_SPEED, 1);
       car.rotation.z = tilt;
     } else {
       car.rotation.z *= 0.9;
