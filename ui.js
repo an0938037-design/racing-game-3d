@@ -115,35 +115,68 @@ const UIModule = (function() {
       const index = scale(hand.index, w, h);
       const pinky = scale(hand.pinky, w, h);
 
-      // Draw finger bones
-      const fingers = [
-        { from: wrist, to: thumb, color: '#ffcc00' },
-        { from: wrist, to: index, color: '#ffcc00' },
-        { from: wrist, to: pinky, color: '#ffcc00' },
-        { from: thumb, to: index, color: '#ff8800' }
+      // Estimate middle finger from index-pinky midpoint, slightly extended
+      const mid = {
+        x: (index.x + pinky.x) / 2 + (index.x - wrist.x) * 0.08,
+        y: (index.y + pinky.y) / 2 + (index.y - wrist.y) * 0.08
+      };
+
+      // Palm polygon (wrist to finger bases)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(wrist.x, wrist.y);
+      overlayCtx.lineTo(thumb.x, thumb.y);
+      overlayCtx.lineTo(index.x, index.y);
+      overlayCtx.lineTo(mid.x, mid.y);
+      overlayCtx.lineTo(pinky.x, pinky.y);
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = 'rgba(255, 200, 50, 0.12)';
+      overlayCtx.fill();
+      overlayCtx.strokeStyle = 'rgba(255, 200, 50, 0.25)';
+      overlayCtx.lineWidth = 1.5;
+      overlayCtx.stroke();
+
+      // Bones from wrist to each finger tip
+      const bones = [
+        { to: thumb, color: '#ffcc00', width: 3 },
+        { to: index, color: '#ffcc00', width: 3 },
+        { to: mid, color: '#ffcc00', width: 2.5 },
+        { to: pinky, color: '#ffcc00', width: 2.5 }
       ];
 
-      for (const f of fingers) {
+      for (const b of bones) {
         overlayCtx.beginPath();
-        overlayCtx.moveTo(f.from.x, f.from.y);
-        overlayCtx.lineTo(f.to.x, f.to.y);
-        overlayCtx.strokeStyle = f.color;
-        overlayCtx.lineWidth = 2.5;
+        overlayCtx.moveTo(wrist.x, wrist.y);
+        overlayCtx.lineTo(b.to.x, b.to.y);
+        overlayCtx.strokeStyle = b.color;
+        overlayCtx.lineWidth = b.width;
+        overlayCtx.stroke();
+      }
+
+      // Finger webs (connecting adjacent tips)
+      const webLines = [
+        { from: thumb, to: index },
+        { from: index, to: mid },
+        { from: mid, to: pinky }
+      ];
+      for (const wl of webLines) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(wl.from.x, wl.from.y);
+        overlayCtx.lineTo(wl.to.x, wl.to.y);
+        overlayCtx.strokeStyle = 'rgba(255, 200, 50, 0.4)';
+        overlayCtx.lineWidth = 1.5;
         overlayCtx.stroke();
       }
 
       // Joint circles at finger tips
-      const tips = [
-        { pos: thumb, color: '#ffcc00' },
-        { pos: index, color: '#ffcc00' },
-        { pos: pinky, color: '#ffcc00' }
-      ];
-
+      const tips = [thumb, index, mid, pinky];
       for (const t of tips) {
         overlayCtx.beginPath();
-        overlayCtx.arc(t.pos.x, t.pos.y, 3.5, 0, Math.PI * 2);
-        overlayCtx.fillStyle = t.color;
+        overlayCtx.arc(t.x, t.y, 4, 0, Math.PI * 2);
+        overlayCtx.fillStyle = '#ffdd44';
         overlayCtx.fill();
+        overlayCtx.strokeStyle = '#ffffff';
+        overlayCtx.lineWidth = 1.5;
+        overlayCtx.stroke();
       }
     }
   }
