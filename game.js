@@ -15,7 +15,7 @@ const GameModule = (function() {
   const MAX_REVERSE_SPEED = 0.5;
   const ACCELERATION = 0.025;
   const FRICTION = 0.015;
-  const STEERING_SPEED = 0.04;
+  const STEERING_SPEED = 0.09;
 
   let velocity = 0;
   let score = 0;
@@ -392,14 +392,14 @@ const GameModule = (function() {
   }
 
   function updateCamera() {
-    const behind = new THREE.Vector3(0, 4, 8);
-    const target = new THREE.Vector3(0, 1.5, -5);
+    const behind = new THREE.Vector3(0, 3.5, 7);
+    const target = new THREE.Vector3(0, 0.8, -10);
 
     const carQuat = car.quaternion.clone();
     const behindWorld = behind.clone().applyQuaternion(carQuat).add(car.position);
     const targetWorld = target.clone().applyQuaternion(carQuat).add(car.position);
 
-    camera.position.lerp(behindWorld, 0.08);
+    camera.position.lerp(behindWorld, 0.12);
     camera.lookAt(targetWorld);
   }
 
