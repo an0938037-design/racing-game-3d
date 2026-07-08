@@ -103,8 +103,8 @@ const UIModule = (function() {
     const steeringEl = document.getElementById('hud-steering');
     const armDistEl = document.getElementById('hud-armdist');
     const actionEl = document.getElementById('hud-action');
+    const handsEl = document.getElementById('hud-hands');
     const fpsEl = document.getElementById('hud-fps');
-    const scoreEl = document.getElementById('hud-score');
 
     if (!state) return;
 
@@ -117,7 +117,10 @@ const UIModule = (function() {
 
     if (armDistEl) armDistEl.textContent = state.armDistance.toFixed(2);
     if (actionEl) actionEl.textContent = state.action || 'STOP';
-    if (scoreEl) scoreEl.textContent = state.score || 0;
+    if (handsEl) {
+      handsEl.textContent = state.handsOpen ? 'OPEN' : 'FIST';
+      handsEl.style.color = state.handsOpen ? '#ff0' : '#0f0';
+    }
     if (fpsEl) fpsEl.textContent = fps;
   }
 
